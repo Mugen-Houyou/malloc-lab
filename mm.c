@@ -14,10 +14,10 @@
 #include "mm.h"
 #include "memlib.h"
 
-/*********************************************************
- * NOTE TO STUDENTS: Before you do anything else, please
- * provide your team information in the following struct.
- ********************************************************/
+ /*********************************************************
+  * NOTE TO STUDENTS: Before you do anything else, please
+  * provide your team information in the following struct.
+  ********************************************************/
 
 team_t team = {
     /* Team name */
@@ -37,7 +37,7 @@ team_t team = {
 #define WSIZE 8 // 워드 단위, 헤더/푸터 크기
 #define DSIZE 16  // 더블
 #define CHUNKSIZE (1 << 12) // 청크 크기
-#define MAX_HEAP_BLOCKS (1 << 12) // mm_heapcheck의 힙블록 무한루프 감지용
+#define MAX_HEAP_BLOCKS (1 << 12) // mm_heapcheck의 힙블록 무한루프 감지용. 위는 2^12 bytes, 이건 2^12 blocks.
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
@@ -51,11 +51,17 @@ team_t team = {
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) // 블록 포인터 bp에 대하여, 앞 블록의 주소를 계산
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) // 블록 포인터 bp에 대하여, 다음 블록의 주소를 계산
 
-#define CHKHEAP(lineno) mm_checkheap(lineno) // heap 라인 넘버 출력
+/* DEBUG 플래그 옵션 - `Makefile`의 `-DDEBUG` */
+#ifdef DEBUG 
+# define CHKHEAP(lineno) mm_checkheap(lineno)
+#else
+# define CHKHEAP(l) 
+#endif
 
 
 /* 전역 변수, 함수 시그니처 */
-static char *heap_listp = NULL; // 맨 처음 블록 가리키는 포인터
+static char *heap_listp = NULL; // 맨 처음 블록 포인터
+static char *last_alloctd = NULL; // 마지막 할당 위치 포인터
 
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
@@ -112,7 +118,7 @@ static void *coalesce(void *bp){
 
     if (prev_alloc && next_alloc) // 케이스 1
         return bp;
-    
+
     if (prev_alloc && !next_alloc){ // 케이스 2
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp), PACK(size, 0));
@@ -129,13 +135,13 @@ static void *coalesce(void *bp){
         bp = PREV_BLKP(bp);
     }
 
+    // 아래는 next-fit 시 필요 부분
+    last_alloctd = bp;
+
     return bp;
 }
 
-/**
- * find_fit: 해당 asize에 맞는 곳 찾기 (first-fit 탐색)
- */
-static void *find_fit(size_t asize){
+static void *find_fit_first_fit(size_t asize){
     void *bp;
 
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
@@ -145,9 +151,26 @@ static void *find_fit(size_t asize){
     return NULL; // 못 찾았다
 }
 
-/** 
+/**
+ * find_fit: 해당 asize에 맞는 곳 찾기 (next-fit 탐색)
+ */
+static void *find_fit(size_t asize){
+    void *bp;
+    
+    if (last_alloctd == NULL)
+        last_alloctd = heap_listp;
+    
+
+    for (bp = last_alloctd; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+        if (!GET_ALLOC(HDRP(bp)) && (GET_SIZE(HDRP(bp)) >= asize))
+            return bp;
+    }
+    return NULL; // 못 찾았다
+}
+
+/**
  * place: asize 바이트를 bp에 배치
- * 만약 남는 공간이 최소 블록 크기 이상이면 분할 
+ * 만약 남는 공간이 최소 블록 크기 이상이면 분할
  */
 static void place(void *bp, size_t asize){
     size_t csize = GET_SIZE(HDRP(bp));
@@ -224,7 +247,7 @@ static void mm_checkheap(int line) {
             break;
         }
 
-        /* 2-2) 크기·할당 비트 일치 검사 */
+        /* 2-2) 크기, 할당 비트 일치 검사 */
         if (hsize != fsize)
             printf("Header/Footer size mismatch at %p (line %d)\n", bp, line);
         if (halloc != falloc)
@@ -251,11 +274,10 @@ static void mm_checkheap(int line) {
             FTRP(bp) > (char *)mem_heap_hi())
             printf("Block %p out of heap bounds (line %d)\n", bp, line);
 
-            
+
         /* (추가) 인접 free 블록 없음 */
         if (!halloc && !GET_ALLOC(HDRP(NEXT_BLKP(bp)))) {
-            printf("Uncoalesced free blocks at %p & %p (line %d)\n",
-                   bp, NEXT_BLKP(bp), line);
+            printf("Uncoalesced free blocks at %p & %p (line %d)\n", bp, NEXT_BLKP(bp), line);
             errors++;
         }
 
@@ -279,7 +301,8 @@ static void mm_checkheap(int line) {
  * extendsize는 적합한 블록이 없을 때 힙을 확장할 양
  */
 void *mm_malloc(size_t size){
-    size_t asize; 
+    CHKHEAP(__LINE__);    /* 진입 전 힙 상태 확인 */
+    size_t asize;
     size_t extendsize;
     char *bp;
 
@@ -289,6 +312,7 @@ void *mm_malloc(size_t size){
 
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
+        CHKHEAP(__LINE__); /* place 직후 확인 */
         return bp;
     }
 
@@ -299,25 +323,27 @@ void *mm_malloc(size_t size){
 
     place(bp, asize);
 
+    CHKHEAP(__LINE__);    /* 확장 후 다시 확인 */
     return bp;
 }
 
 /**
- * mm_free: 블록 해제 
+ * mm_free: 블록 해제
  */
 void mm_free(void *bp){
     size_t size = GET_SIZE(HDRP(bp));
 
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
-    
+
     coalesce(bp); // 이전, 다음 블록 free이면 병합
 }
 
 /**
- * mm_realloc: 새 블록 할당하고 이전 껀 해제 
+ * mm_realloc: 새 블록 할당하고 이전 껀 해제
  */
 void *mm_realloc(void *ptr, size_t size){
+    CHKHEAP(__LINE__);    /* 진입 전 힙 상태 확인 */
     if (ptr == NULL)
         return mm_malloc(size);
 
