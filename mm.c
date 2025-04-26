@@ -37,6 +37,7 @@ team_t team = {
 #define WSIZE 8 // 워드 단위, 헤더/푸터 크기
 #define DSIZE 16  // 더블
 #define CHUNKSIZE (1 << 12) // 청크 크기
+#define MAX_HEAP_BLOCKS (1 << 12) // mm_heapcheck의 힙블록 무한루프 감지용
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
@@ -163,9 +164,113 @@ static void place(void *bp, size_t asize){
     }
 }
 
-static void mm_checkheap(int lineno){
+static void mm_checkheap_v0_1(int lineno){
     printf("Line No.: %d, Heap (%p):\n", lineno, heap_listp);
 }
+
+static void mm_checkheap_v0_2(int line) {
+    char *bp = heap_listp;
+    for (; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        /* 헤더/푸터 불일치 */
+        if (GET(HDRP(bp)) != GET(FTRP(bp)))
+            printf("헤더/푸터 불일치: %p (line %d)\n", bp, line);
+        /* 블록 크기 불일치 체크 */
+        if (GET_SIZE(HDRP(bp)) != GET_SIZE(FTRP(bp))) // 헤더/푸터의 크기 비트와 할당 비트가 모두 일치?
+            printf("Header/Footer size mismatch at %p (line %d)\n", bp, line);
+        if (GET_ALLOC(HDRP(bp)) != GET_ALLOC(FTRP(bp))) // 헤더/푸터의 크기만 일치(alloc 비트는 무시)?
+            printf("할당 비트 불일치: %p (line %d)\n", bp, line);
+        /* free → prev/next 블록 할당 여부 체크 */
+        if (!GET_ALLOC(HDRP(bp))) {
+            if (GET_ALLOC(HDRP(PREV_BLKP(bp))) == 1)
+                printf("Free block %p has allocated previous block (line %d)\n", bp, line);
+            if (GET_ALLOC(HDRP(NEXT_BLKP(bp))) == 1)
+                printf("Free block %p has allocated next block (line %d)\n", bp, line);
+        }
+        /* 전체 힙 순회 중 byte-by-byte fence 검사 */
+        if (bp < heap_listp || bp > mem_heap_hi())
+            printf("힙 포인터 경계 이상: bp < heap_listp || bp > mem_heap_hi() at %p (line %d)\n", bp, line);
+        if (GET_SIZE(HDRP(bp)) == 0)
+            printf("힙 포인터가 NULL at %p (line %d)\n", bp, line); if (((size_t)bp % DSIZE) != 0)
+            printf("Alignment error at %p (line %d)\n", bp, line);
+        /* 블록 크기 체크 */
+        if (GET_SIZE(HDRP(bp)) < DSIZE)
+            printf("블록 크기 불일치: GET_SIZE(HDRP(bp)) < DSIZE at %p (line %d)\n", bp, line);
+    }
+}
+
+static void mm_checkheap(int line) {
+    char *bp = heap_listp;
+    int errors = 0;
+
+    /* 1) 프롤로그 검사 */
+    if (GET(HDRP(bp)) != PACK(DSIZE, 1))
+        printf("Bad prologue header at %p (line %d)\n", bp, line);
+    if (GET(FTRP(bp)) != PACK(DSIZE, 1))
+        printf("Bad prologue footer at %p (line %d)\n", bp, line);
+
+    /* 2) 본문 블록 순회 */
+    for (size_t count = 0; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp), ++count) {
+        size_t h = GET(HDRP(bp));
+        size_t f = GET(FTRP(bp));
+        size_t hsize  = GET_SIZE(HDRP(bp));
+        size_t halloc = GET_ALLOC(HDRP(bp));
+        size_t fsize  = GET_SIZE(FTRP(bp));
+        size_t falloc = GET_ALLOC(FTRP(bp));
+
+        /* 2-1) 에필로그 도달 시 종료 */
+        if (hsize == 0) {
+            if (h != PACK(0, 1))
+                printf("Bad epilogue header at %p (line %d)\n", bp, line);
+            break;
+        }
+
+        /* 2-2) 크기·할당 비트 일치 검사 */
+        if (hsize != fsize)
+            printf("Header/Footer size mismatch at %p (line %d)\n", bp, line);
+        if (halloc != falloc)
+            printf("Header/Footer alloc mismatch at %p (line %d)\n", bp, line);
+
+        /* 2-3) 정렬(Alignment) 검사 */
+        if (((size_t)bp % DSIZE) != 0)
+            printf("Alignment error at %p (line %d)\n", bp, line);
+
+        /* 2-4) 최소 블록 크기 검사 */
+        if (hsize < DSIZE)
+            printf("Block too small at %p (line %d)\n", bp, line);
+
+        /* 2-5) free 블록 주변 할당 상태 검사 */
+        if (!halloc) {
+            if (GET_ALLOC(HDRP(PREV_BLKP(bp))))
+                printf("Free block %p has allocated previous block (line %d)\n", bp, line);
+            if (GET_ALLOC(HDRP(NEXT_BLKP(bp))))
+                printf("Free block %p has allocated next block (line %d)\n", bp, line);
+        }
+
+        /* 2-6) 힙 경계 검사 */
+        if (HDRP(bp) < (char *)mem_heap_lo() ||
+            FTRP(bp) > (char *)mem_heap_hi())
+            printf("Block %p out of heap bounds (line %d)\n", bp, line);
+
+            
+        /* (추가) 인접 free 블록 없음 */
+        if (!halloc && !GET_ALLOC(HDRP(NEXT_BLKP(bp)))) {
+            printf("Uncoalesced free blocks at %p & %p (line %d)\n",
+                   bp, NEXT_BLKP(bp), line);
+            errors++;
+        }
+
+        /* (추가) 순회 카운트 한계 */
+        if (count > MAX_HEAP_BLOCKS) {
+            printf("Possible heap cycle detected at %p (line %d)\n", bp, line);
+            errors++;
+            break;
+        }
+    }
+
+    if (errors)
+        printf("mm_checkheap: %d error(s) detected (line %d)\n",errors, line);
+}
+
 
 /**
  * mm_malloc: 최소 size 바이트의 페이로드를 가진 블록 할당
