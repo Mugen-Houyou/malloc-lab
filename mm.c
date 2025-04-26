@@ -22,6 +22,7 @@
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
  ********************************************************/
+
 team_t team = {
     /* Team name */
     "ateam",
