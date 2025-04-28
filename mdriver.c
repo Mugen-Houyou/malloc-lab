@@ -16,6 +16,8 @@
 #include <float.h>
 #include <time.h>
 
+extern char *optarg; // Added declaration for optarg
+
 #include "mm.h"
 #include "memlib.h"
 #include "fsecs.h"
