@@ -272,39 +272,48 @@ static void *coalesce(void *bp){
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
     
-    /* 1) 병합 대상이 될 수 있는 인접 free 블록은 리스트에서 제거 */
-    if (!prev_alloc){
-        remove_node(PREV_BLKP(bp));
-        if (rover == PREV_BLKP(bp))
-            rover = bp;
-    }
-    if (!next_alloc){
-        remove_node(NEXT_BLKP(bp));
-        if (rover == NEXT_BLKP(bp))
-            rover = bp;
-    }
+    // /* 1) 병합 대상이 될 수 있는 인접 free 블록은 리스트에서 제거 */
+    // if (!prev_alloc){
+    //     remove_node(PREV_BLKP(bp));
+    //     if (rover == PREV_BLKP(bp))
+    //         rover = bp;
+    // }
+    // if (!next_alloc){
+    //     remove_node(NEXT_BLKP(bp));
+    //     if (rover == NEXT_BLKP(bp))
+    //         rover = bp;
+    // }
 
     /* 2) 실제 메모리상 병합 */
     if (prev_alloc && next_alloc){ // 케이스 1: 앞, 뒤 블록 모두 alloc
         // return bp;
     } else if (prev_alloc && !next_alloc){ // 케이스 2: 앞 alloc, 뒷 free
+        remove_node(NEXT_BLKP(bp));
+        if (rover == NEXT_BLKP(bp))
+            rover = bp;
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         SET_HEADER(bp,size,0);
         SET_FOOTER(bp,size,0);
     } else if (!prev_alloc && next_alloc){ // 케이스 3: 앞 free, 뒷 alloc
+        remove_node(PREV_BLKP(bp));
+        if (rover == PREV_BLKP(bp))
+            rover = bp;
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         bp = PREV_BLKP(bp);
         SET_HEADER(bp,size,0);
         SET_FOOTER(bp,size,0);
     } else { // 케이스 4: 앞, 뒤 블록 모두 free
+        remove_node(PREV_BLKP(bp));
+        if (rover == PREV_BLKP(bp))
+            rover = bp;
+        remove_node(NEXT_BLKP(bp));
+        if (rover == NEXT_BLKP(bp))
+            rover = bp;
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(HDRP(NEXT_BLKP(bp)));
         bp = PREV_BLKP(bp);
         SET_HEADER(bp, size, 0);
         SET_FOOTER(bp, size, 0);
     }
-
-    // // 아래는 next-fit 시 필요 부분
-    // last_alloctd = bp;
 
     return bp;
 }
