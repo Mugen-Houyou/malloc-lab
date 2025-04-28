@@ -140,6 +140,11 @@ static void *free_list_head = NULL; // Explicit free list의 출발점
 /** 
  * adjust_block: 크기를 MIN_BLOCK_SIZE 단위로 맞추되, 헤더 & 푸터(16 바이트) 포함치
  */
+static inline size_t adjust_block_v0_3(size_t size) { // implicit free list 원본
+    if (size <= DSIZE) return MIN_BLOCK_SIZE;
+    return DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
+}
+
 static inline size_t adjust_block(size_t size) {
     size_t asize = DSIZE * ((size + DSIZE + (DSIZE-1)) / DSIZE);
     return (asize < MIN_BLOCK_SIZE) ? MIN_BLOCK_SIZE : asize;
@@ -308,10 +313,6 @@ int mm_init(void){
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
         return -1;
 
-    // 설명 필요.
-    if (extend_heap(2)==NULL)
-        return -1;
-
     return 0;
 }
 
@@ -320,38 +321,62 @@ int mm_init(void){
  *          - 이 개선판은 in-place shrink/expand가 적용됨
  */
 void *mm_realloc(void *ptr, size_t size) {
-    if (ptr == NULL)
-        return mm_malloc(size);  // ptr이 NULL이면 malloc과 같은 방식으로 처리
+    if (ptr == NULL) {
+        return mm_malloc(size);
+    }
+
     if (size == 0) {
-        mm_free(ptr);  // size가 0이면 해당 블록을 free하고 NULL 반환
+        mm_free(ptr);
         return NULL;
     }
 
-    size_t oldsize = GET_SIZE(HDRP(ptr));  // 기존 블록의 크기 가져오기
-    size_t asize = (size <= DSIZE) ? (2 * DSIZE) : DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
+    size_t asize = adjust_block(size);
+    size_t old_size = GET_SIZE(HDRP(ptr));
 
-    if (asize <= oldsize)
-        return ptr;  // 기존 크기가 충분하면 기존 포인터 그대로 반환
-
-    void *next = NEXT_BLKP(ptr);  // 다음 블록 주소
-    if (!GET_ALLOC(HDRP(next)) && (oldsize + GET_SIZE(HDRP(next))) >= asize) {
-        remove_node(next);  // 만약 옆 블록이 free이고 크기가 충분하면 병합
-        size_t newsize = oldsize + GET_SIZE(HDRP(next));  // 병합 후 새로운 크기
-        PUT(HDRP(ptr), PACK(newsize, 1));  // 헤더 업데이트
-        PUT(FTRP(ptr), PACK(newsize, 1));  // 푸터 업데이트
-        return ptr;  // 병합된 블록 반환
+    if (asize <= old_size) {
+        size_t leftover = old_size - asize;
+        if (leftover >= MIN_BLOCK_SIZE) {
+            SET_HEADER(ptr, asize, 1);
+            SET_FOOTER(ptr, asize, 1);
+            void *new_free = NEXT_BLKP(ptr);
+            SET_HEADER(new_free, leftover, 0);
+            SET_FOOTER(new_free, leftover, 0);
+            insert_node(new_free);  // 남은 부분을 free list에 추가
+        }
+        return ptr;
     }
 
-    void *newptr = mm_malloc(size);  // 병합할 수 없다면 새로운 메모리 할당
-    if (newptr == NULL)
-        return NULL;  // 할당 실패하면 NULL 반환
+    void *next_blk = NEXT_BLKP(ptr);
+    size_t next_alloc = GET_ALLOC(HDRP(next_blk));
+    size_t next_size = GET_SIZE(HDRP(next_blk));
 
-    size_t copySize = oldsize - DSIZE;  // 기존 데이터 크기
-    if (size < copySize)
-        copySize = size;  // 복사할 크기를 요청된 크기로 맞춤
-    memcpy(newptr, ptr, copySize);  // 데이터 복사
-    mm_free(ptr);  // 기존 블록은 free
-    return newptr;  // 새로운 포인터 반환
+    if (!next_alloc && (old_size + next_size >= asize)) {
+        remove_node(next_blk);  // 병합 전 인접 free 블록을 리스트에서 제거
+        size_t new_size = old_size + next_size;
+        SET_HEADER(ptr, new_size, 1);
+        SET_FOOTER(ptr, new_size, 1);
+
+        size_t leftover = new_size - asize;
+        if (leftover >= MIN_BLOCK_SIZE) {
+            SET_HEADER(ptr, asize, 1);
+            SET_FOOTER(ptr, asize, 1);
+            void *new_free = NEXT_BLKP(ptr);
+            SET_HEADER(new_free, leftover, 0);
+            SET_FOOTER(new_free, leftover, 0);
+            insert_node(new_free);  // 남은 부분을 free list에 추가
+        }
+        return ptr;
+    }
+
+    void *new_ptr = mm_malloc(size);
+    if (new_ptr == NULL)
+        return NULL;
+
+    size_t copy_size = old_size - DSIZE < size ? old_size - DSIZE : size;
+    memcpy(new_ptr, ptr, copy_size);
+    mm_free(ptr);
+
+    return new_ptr;
 }
 
 /**
@@ -370,9 +395,6 @@ void *mm_malloc(size_t size){
     /* 2. free list에서 first-fit 탐색 */
     void *bp = find_fit(asize);
     if (bp != NULL) {
-        // 설명 필요
-        // bp = coalesce(bp);
-
         place(bp, asize); // place 안에서 remove_node → split/insert_node
         return bp;
     }
