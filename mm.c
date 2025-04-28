@@ -373,9 +373,44 @@ int mm_init(void){
 
 /**
  * mm_realloc (개선판): 새 블록 할당하고 이전 껀 해제
- *          - 이 개선판은 in-place shrink/expand가 적용됨
+ *          - minmooo-ya 버전 
  */
 void *mm_realloc(void *ptr, size_t size) {
+    if (ptr == NULL)
+        return mm_malloc(size);  // ptr이 NULL이면 malloc과 같은 방식으로 처리
+    if (size == 0) {
+        mm_free(ptr);  // size가 0이면 해당 블록을 free하고 NULL 반환
+        return NULL;
+    }
+
+    size_t oldsize = GET_SIZE(HDRP(ptr));  // 기존 블록의 크기 가져오기
+    size_t asize = (size <= DSIZE) ? (2 * DSIZE) : DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
+
+    if (asize <= oldsize)
+        return ptr;  // 기존 크기가 충분하면 기존 포인터 그대로 반환
+
+    void *next = NEXT_BLKP(ptr);  // 다음 블록 주소
+    if (!GET_ALLOC(HDRP(next)) && (oldsize + GET_SIZE(HDRP(next))) >= asize) {
+        remove_node(next);  // 만약 옆 블록이 free이고 크기가 충분하면 병합
+        size_t newsize = oldsize + GET_SIZE(HDRP(next));  // 병합 후 새로운 크기
+        PUT(HDRP(ptr), PACK(newsize, 1));  // 헤더 업데이트
+        PUT(FTRP(ptr), PACK(newsize, 1));  // 푸터 업데이트
+        return ptr;  // 병합된 블록 반환
+    }
+
+    void *newptr = mm_malloc(size);  // 병합할 수 없다면 새로운 메모리 할당
+    if (newptr == NULL)
+        return NULL;  // 할당 실패하면 NULL 반환
+
+    size_t copySize = oldsize - DSIZE;  // 기존 데이터 크기
+    if (size < copySize)
+        copySize = size;  // 복사할 크기를 요청된 크기로 맞춤
+    memcpy(newptr, ptr, copySize);  // 데이터 복사
+    mm_free(ptr);  // 기존 블록은 free
+    return newptr;  // 새로운 포인터 반환
+}
+
+void *mm_realloc_v1(void *ptr, size_t size) {
     CHKHEAP(__LINE__);
 
     if (ptr == NULL) {
@@ -439,30 +474,6 @@ void *mm_realloc(void *ptr, size_t size) {
     return new_ptr;
 }
 
-
-void *mm_realloc_orig(void *ptr, size_t size){
-    CHKHEAP(__LINE__);    /* 진입 전 힙 상태 확인 */
-    if (ptr == NULL)
-        return mm_malloc(size);
-
-    if (size == 0) {
-        mm_free(ptr);
-        return NULL;
-    }
-
-    void *newptr = mm_malloc(size);
-    if (!newptr)
-        return NULL;
-
-    size_t oldsize = GET_SIZE(HDRP(ptr)) - DSIZE; // 헤더에서 블록 크기 읽기
-    if (size < oldsize)
-        oldsize = size;
-
-    memcpy(newptr, ptr, oldsize); // 걍 그대로 복사
-    mm_free(ptr);
-
-    return newptr;
-}
 
 /**
  * mm_malloc: 최소 size 바이트의 페이로드를 가진 블록 할당
