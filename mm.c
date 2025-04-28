@@ -127,7 +127,7 @@ team_t team = {
 /* 전역 변수 */
 static char *heap_listp = NULL; // 맨 처음 블록 포인터
 static void *free_list_head = NULL; // Explicit free list의 출발점
-static char *rover = NULL; // Next-fit용 탐색 시작 포인터
+static void *rover = NULL;  // Next-fit용 탐색 포인터
 
 
 /** 참고: 함수에 `static`는 왜 붙이는가? 
@@ -160,6 +160,9 @@ static void insert_node(void* bp){
     SET_SUCC(bp, free_list_head);
     SET_PRED(bp, NULL);
 
+    if (rover == NULL) 
+        rover = bp;
+
     if (free_list_head != NULL)
         SET_PRED(free_list_head, bp);
 
@@ -182,25 +185,17 @@ static void remove_node(void* bp){
         free_list_head = succ;
     }
 
-    if (succ != NULL) {
+    if (succ != NULL)
         SET_PRED(succ, pred);
-    }
 
-    /*
-    if(pred) // bp 앞에 pred가 있음 - pred에 succ를 이음
-        SET_SUCC(pred, succ); // pred의 다음 블록 위치를 succ로 설정
-    else // bp가 머리였음 - 전역변수 free_list_head를 succ로.
-        free_list_head = succ;
-    
-    if (succ) // bp의 successor가 있다?
-        SET_PRED(succ, pred); // succ의 이전 블록 위치를 pred로 설정
-    */
+    if (rover == bp) 
+        rover = succ ? succ : pred ? pred : free_list_head;
 }
 
 /**
  * find_fit: 해당 asize에 맞는 곳 찾기 (first-fit 탐색)
  */
-static void *find_fit(size_t asize){ // 얘는 기존의 first-fit 탐색
+static void *find_fit_ff(size_t asize){ // 얘는 기존의 first-fit 탐색
     void *bp;
 
     for (bp = free_list_head; bp != NULL; bp = GET_SUCC(bp)){
@@ -210,7 +205,7 @@ static void *find_fit(size_t asize){ // 얘는 기존의 first-fit 탐색
     return NULL; // 못 찾았다
 }
 
-static void *find_fit_nf(size_t asize) {
+static void *find_fit(size_t asize) {
     if (!rover) 
         rover = free_list_head;
 
@@ -242,6 +237,9 @@ static void place(void *bp, size_t asize){
     /* 1) 할당 전 리스트에서 제거 */
     remove_node(bp); // free 리스트에서 블록을 즉시 제거 => 할당 중인 상태가 리스트에 남지 않도록 함
 
+    if (rover == bp)
+        rover = GET_SUCC(bp);  // 로버가 제거될 블록을 가리키고 있었다면, 다음 노드로 옮기기
+
     /* 2) 분할이 가능 */
     if ((csize - asize) >= MIN_BLOCK_SIZE){
         SET_HEADER(bp, asize, 1);
@@ -261,9 +259,9 @@ static void place(void *bp, size_t asize){
         SET_FOOTER(bp, csize, 1);
     }
 
-    // 아래는 next-fit 시 필요 부분
-    if (rover == bp)
-        rover = GET_SUCC(bp); //로버가 이 블록을 가리키고 있었다면, 다음 노드로 옮기기
+    // // 아래는 next-fit 시 필요 부분
+    // if (rover == bp)
+    //     rover = GET_SUCC(bp); //로버가 이 블록을 가리키고 있었다면, 다음 노드로 옮기기
 }
 
 /**
@@ -275,10 +273,16 @@ static void *coalesce(void *bp){
     size_t size = GET_SIZE(HDRP(bp));
     
     /* 1) 병합 대상이 될 수 있는 인접 free 블록은 리스트에서 제거 */
-    if (!prev_alloc)
+    if (!prev_alloc){
         remove_node(PREV_BLKP(bp));
-    if (!next_alloc)
+        if (rover == PREV_BLKP(bp))
+            rover = bp;
+    }
+    if (!next_alloc){
         remove_node(NEXT_BLKP(bp));
+        if (rover == NEXT_BLKP(bp))
+            rover = bp;
+    }
 
     /* 2) 실제 메모리상 병합 */
     if (prev_alloc && next_alloc){ // 케이스 1: 앞, 뒤 블록 모두 alloc
@@ -349,6 +353,8 @@ int mm_init(void){
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
         return -1;
 
+    rover = free_list_head;  // 힙 확장 후 첫 free 블록을 rover로 설정
+
     return 0;
 }
 
@@ -357,6 +363,8 @@ int mm_init(void){
  *          - 이 개선판은 in-place shrink/expand가 적용됨
  */
 void *mm_realloc(void *ptr, size_t size) {
+    CHKHEAP(__LINE__);
+
     if (ptr == NULL) {
         return mm_malloc(size);
     }
@@ -381,6 +389,8 @@ void *mm_realloc(void *ptr, size_t size) {
         }
         return ptr;
     }
+
+    CHKHEAP(__LINE__);
 
     void *next_blk = NEXT_BLKP(ptr);
     size_t next_alloc = GET_ALLOC(HDRP(next_blk));
@@ -412,6 +422,7 @@ void *mm_realloc(void *ptr, size_t size) {
     memcpy(new_ptr, ptr, copy_size);
     mm_free(ptr);
 
+    CHKHEAP(__LINE__);
     return new_ptr;
 }
 
@@ -482,7 +493,7 @@ void *mm_malloc(size_t size){
 static void mm_checkheap(int line) {
     char *bp;
     int errors = 0;
-    fprintf(stderr, "\n[mm_checkheap @ line %d]\n", line);
+    // fprintf(stderr, "\n[mm_checkheap @ line %d]\n", line);
 
     /* 0. Prologue 검사 */
     bp = heap_listp;
