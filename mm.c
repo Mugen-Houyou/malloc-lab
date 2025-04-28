@@ -28,16 +28,16 @@ team_t team = {
     ""
 };
 
-
 /* 기본 상수, 매크로 */
-#define WSIZE 4             // 워드 단위, 헤더/푸터 크기
-#define WTYPE u_int32_t     // 워드의 타입
-#define DSIZE 8             // 더블 워드
-#define PTR_SIZE         sizeof(void*)          // 포인터 크기
-#define MIN_BLOCK_SIZE  (((2*WSIZE) + 2*PTR_SIZE + (DSIZE-1)) & ~0x7)
+#define WTYPE uintptr_t     // 워드 타입: 포인터 크기와 일치하도록
+#define WSIZE (sizeof(WTYPE))    // 워드 사이즈: 32비트면 4B, 64비트면 8B
+#define DSIZE (2 * WSIZE)    // 더블 워드 크기
+#define PTR_SIZE (sizeof(void *))  // 포인터 크기
+
+#define MIN_BLOCK_SIZE  (((2*WSIZE) + 2*PTR_SIZE + (DSIZE-1)) & ~0x7) // 이식성 최대로!
 // #define MIN_BLOCK_SIZE 24   // explicit free list일 때 블록의 최소 사이즈 - header(4B) + prev(4B) + next(4B) + footer(4B) = 16B. 64비트 아키텍처면 header(4B) + prev(8B) + next(8B) + footer(4B) = 24B.
 // #define MIN_BLOCK_SIZE 16   // 블록의 최소 사이즈 - 즉 2*DSIZE
-#define ALIGNMENT 8         // Payload Alignment - 위 MIN_BLOCK_SIZE는 이 숫자의 배수여야 함.
+#define ALIGNMENT DSIZE        // Payload Alignment - 위 MIN_BLOCK_SIZE는 이 숫자의 배수여야 함.
 #define BYTE char           // Byte type
 #define CHUNKSIZE (1 << 12) // 청크 크기
 #define MAX_HEAP_BLOCKS (1 << 12) // mm_heapcheck에서, 힙 블록 무한루프 감지용. MIN_BLOCK_SIZE랑은 상관 없는 개념이며 단위도 다름. 위는 bytes, 이건 2^12 blocks.
@@ -55,11 +55,11 @@ team_t team = {
 /* Pack the size, prev-allocated and allocation bits into a word */
 #define PACKT(size, prev, alloc) ((size) | (prev << 1) | (alloc))
 /* Read the size from header/footer word at address Hptr */
-#define READ_SIZE(Hptr) (READ_WORD(Hptr) & ~0x7) // ~0x7  == 111111...1000 ==> 하위 3비트 제외한 나머지만 남김 (즉, 블록 크기만 남김)
+#define READ_SIZE(Hptr) (READ_WORD(Hptr) & ~(WTYPE)0x7) // ~0x7  == 111111...1000 ==> 하위 3비트 제외한 나머지만 남김 (즉, 블록 크기만 남김)
 /* Read the allocation-bit from header/footer word at address Hptr */
-#define READ_ALLOC(Hptr) (READ_WORD(Hptr) & 0x1) // 0x1  == 000000...0001 ==> 최하위 비트만 남김 (즉, 할당 여부만 남김)
+#define READ_ALLOC(Hptr) (READ_WORD(Hptr) & (WTYPE)0x1) // 0x1  == 000000...0001 ==> 최하위 비트만 남김 (즉, 할당 여부만 남김)
 /* Read the prev-allocated-bit from header/footer word at address Hptr */
-#define READ_PREV_ALLOC(Hptr) ((READ_WORD(Hptr) & 0x2) >> 1)
+#define READ_PREV_ALLOC(Hptr) ((READ_WORD(Hptr) & (WTYPE)0x2) >> 1)
 /* Write the size, prev-allocated and allocation bits to the word at address Hptr */
 #define WRITE(Hptr, size, prev, alloc) (WRITE_WORD((Hptr), PACKT((size), (prev), (alloc))))
 /* Write the size to the word at address Hptr */
@@ -70,10 +70,10 @@ team_t team = {
 #define WRITE_PREV_ALLOC(Hptr, prev) (WRITE((Hptr), READ_SIZE(Hptr), prev, READ_ALLOC(Hptr)))
 /* Get the header-word pointer from the payload pointer pp */
 #define HEADER(pp) (MOVE_WORD(pp, -1))
-/* Read the block size at the payload pp */
-#define BLOCK_SIZE(pp) (READ_SIZE(HEADER(pp)))
 /* Get the footer-word pointer from the payload pointer pp */
 #define FOOTER(pp) (MOVE_BYTE(pp, (BLOCK_SIZE(pp) - DSIZE)))
+/* Read the block size at the payload pp */
+#define BLOCK_SIZE(pp) (READ_SIZE(HEADER(pp)))
 /* Gets the block allocation status (alloc-bit) */
 #define GET_ALLOCT(pp) (READ_ALLOC(HEADER(pp)))
 /* Gets the previous block allocation status (prev-alloc-bit) */
@@ -89,10 +89,10 @@ team_t team = {
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7) // DSIZE (=8)의 배수로 올림 정렬 
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) // DSIZE의 배수로 올림 정렬 
 #define PACK(size, alloc) ((size) | (alloc)) // size 및 할당 비트를 워드 1개에 패킹
-#define GET(p) (*(unsigned int *)(p)) // 주소 p에 있는 워드를 읽기
-#define PUT(p, val) (*(unsigned int *)(p) = (val)) // 주소 p에 있는 워드를 쓰기
+#define GET(p) (*(WTYPE  *)(p)) // 주소 p에 있는 워드를 읽기
+#define PUT(p, val) (*(WTYPE  *)(p) = (val)) // 주소 p에 있는 워드를 쓰기
 #define GET_SIZE(p) (GET(p) & ~0x7) // 헤더/푸터에서 크기 비트 읽기
 #define GET_ALLOC(p) (GET(p) & 0x1) // 헤더/푸터에서 할당 비트 읽기
 #define HDRP(bp) ((char *)(bp) - WSIZE) // 블록 포인터 bp에 대하여, 헤더의 주소를 계산
@@ -272,39 +272,52 @@ static void *coalesce(void *bp){
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
     
-    /* 1) 병합 대상이 될 수 있는 인접 free 블록은 리스트에서 제거 */
-    if (!prev_alloc){
-        remove_node(PREV_BLKP(bp));
-        if (rover == PREV_BLKP(bp))
-            rover = bp;
-    }
-    if (!next_alloc){
-        remove_node(NEXT_BLKP(bp));
-        if (rover == NEXT_BLKP(bp))
-            rover = bp;
-    }
+    // /* 1) 병합 대상이 될 수 있는 인접 free 블록은 리스트에서 제거 */
+    // if (!prev_alloc){
+    //     remove_node(PREV_BLKP(bp));
+    //     if (rover == PREV_BLKP(bp))
+    //         rover = bp;
+    // }
+    // if (!next_alloc){
+    //     remove_node(NEXT_BLKP(bp));
+    //     if (rover == NEXT_BLKP(bp))
+    //         rover = bp;
+    // }
 
     /* 2) 실제 메모리상 병합 */
     if (prev_alloc && next_alloc){ // 케이스 1: 앞, 뒤 블록 모두 alloc
         // return bp;
     } else if (prev_alloc && !next_alloc){ // 케이스 2: 앞 alloc, 뒷 free
+        remove_node(NEXT_BLKP(bp));
+        if (rover == NEXT_BLKP(bp))
+            rover = bp;
+
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         SET_HEADER(bp,size,0);
         SET_FOOTER(bp,size,0);
     } else if (!prev_alloc && next_alloc){ // 케이스 3: 앞 free, 뒷 alloc
+        remove_node(PREV_BLKP(bp));
+        if (rover == PREV_BLKP(bp))
+            rover = bp;
+
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         bp = PREV_BLKP(bp);
         SET_HEADER(bp,size,0);
         SET_FOOTER(bp,size,0);
-    } else { // 케이스 4: 앞, 뒤 블록 모두 free
+    } else { // 케이스 4: 앞, 뒤 블록 모두 free. 즉, !prev_alloc && !next_alloc.
+        remove_node(PREV_BLKP(bp));
+        if (rover == PREV_BLKP(bp))
+            rover = bp;
+            
+        remove_node(NEXT_BLKP(bp));
+        if (rover == NEXT_BLKP(bp))
+            rover = bp;
+
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(HDRP(NEXT_BLKP(bp)));
         bp = PREV_BLKP(bp);
         SET_HEADER(bp, size, 0);
         SET_FOOTER(bp, size, 0);
     }
-
-    // // 아래는 next-fit 시 필요 부분
-    // last_alloctd = bp;
 
     return bp;
 }
@@ -610,5 +623,4 @@ static void mm_checkheap(int line) {
 }
 
 #endif  /* DEBUG */
-
 /* ========================== End of Debugging Functions =============================== */
