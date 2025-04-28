@@ -34,7 +34,7 @@ team_t team = {
 #define WTYPE u_int32_t     // 워드의 타입
 #define DSIZE 8             // 더블 워드
 #define PTR_SIZE         sizeof(void*)          // 포인터 크기
-#define MIN_BLOCK_SIZE   ((WSIZE*2 + PTR_SIZE*2 + (DSIZE-1)) / DSIZE * DSIZE)
+#define MIN_BLOCK_SIZE  (((2*WSIZE) + 2*PTR_SIZE + (DSIZE-1)) & ~0x7)
 // #define MIN_BLOCK_SIZE 24   // explicit free list일 때 블록의 최소 사이즈 - header(4B) + prev(4B) + next(4B) + footer(4B) = 16B. 64비트 아키텍처면 header(4B) + prev(8B) + next(8B) + footer(4B) = 24B.
 // #define MIN_BLOCK_SIZE 16   // 블록의 최소 사이즈 - 즉 2*DSIZE
 #define ALIGNMENT 8         // Payload Alignment - 위 MIN_BLOCK_SIZE는 이 숫자의 배수여야 함.
@@ -105,12 +105,14 @@ team_t team = {
 #define SET_FOOTER(bp, sz, alloc)  PUT(FTRP(bp), PACK(sz, alloc))
 
 /* Explicit free list 구현을 위함 */
-#define PRED_PTR(bp)    ((char **)(bp))                        // 이전 블록의 위치가 든 위치
-#define SUCC_PTR(bp)    ((char **)((char *)(bp) + sizeof(void*)))  // 다음 블록의 위치가 든 위치
-#define GET_PRED(bp)    (*(PRED_PTR(bp)))   // 이전 블록 위치를 얻기 
-#define GET_SUCC(bp)    (*(SUCC_PTR(bp)))   // 다음 블록 위치를 얻기
-#define SET_PRED(bp, p) (*(PRED_PTR(bp)) = (p))  // 이전 블록 위치를 설정
-#define SET_SUCC(bp, q) (*(SUCC_PTR(bp)) = (q))  // 다음 블록 위치를 설정
+#define PRED_PTR(bp)  ((char *)(bp))
+#define SUCC_PTR(bp)  ((char *)(bp) + PTR_SIZE)
+
+#define GET_PRED(bp)  (*(void **)(PRED_PTR(bp)))  // 이전 블록 위치를 얻기 
+#define GET_SUCC(bp)  (*(void **)(SUCC_PTR(bp)))  // 다음 블록 위치를 얻기
+#define SET_PRED(bp, p) (GET_PRED(bp) = (p))  // 이전 블록 위치를 설정
+#define SET_SUCC(bp, q) (GET_SUCC(bp) = (q))  // 다음 블록 위치를 설정
+
 
 
 /* DEBUG 플래그 옵션 - `Makefile`의 `-DDEBUG` */
@@ -124,8 +126,8 @@ team_t team = {
 
 /* 전역 변수 */
 static char *heap_listp = NULL; // 맨 처음 블록 포인터
-// static char *last_alloctd = NULL; // Next-fit용 마지막 할당 위치 포인터
 static void *free_list_head = NULL; // Explicit free list의 출발점
+static char *rover = NULL; // Next-fit용 탐색 시작 포인터
 
 
 /** 참고: 함수에 `static`는 왜 붙이는가? 
@@ -208,6 +210,26 @@ static void *find_fit(size_t asize){ // 얘는 기존의 first-fit 탐색
     return NULL; // 못 찾았다
 }
 
+static void *find_fit_nf(size_t asize) {
+    if (!rover) 
+        rover = free_list_head;
+
+    /* 1. tail까지 */
+    for (void *bp = rover; bp; bp = GET_SUCC(bp))
+        if (GET_SIZE(HDRP(bp)) >= asize) { 
+            rover = bp; 
+            return bp; 
+        }
+
+    /* 2. head부터 tail앞까지 wrap */
+    for (void *bp = free_list_head; bp && bp != rover; bp = GET_SUCC(bp))
+        if (GET_SIZE(HDRP(bp)) >= asize) { 
+            rover = bp; 
+            return bp; 
+        }
+    return NULL;
+}
+
 /**
  * place: asize 바이트를 bp에 할당
  * 1) free list에서 제거
@@ -239,8 +261,9 @@ static void place(void *bp, size_t asize){
         SET_FOOTER(bp, csize, 1);
     }
 
-    // // 아래는 next-fit 시 필요 부분
-    // last_alloctd = bp;
+    // 아래는 next-fit 시 필요 부분
+    if (rover == bp)
+        rover = GET_SUCC(bp); //로버가 이 블록을 가리키고 있었다면, 다음 노드로 옮기기
 }
 
 /**
