@@ -366,6 +366,11 @@ int mm_init(void){
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
         return -1;
 
+    // 설명 필요.
+    if (extend_heap(4)==NULL)
+        return -1;
+
+
     rover = free_list_head;  // 힙 확장 후 첫 free 블록을 rover로 설정
 
     return 0;
