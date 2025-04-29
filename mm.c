@@ -44,48 +44,48 @@ team_t team = {
 
 
 /* 유틸 매크로 */
-/* Move the address ptr by offset bytes */
-#define MOVE_BYTE(ptr, offset) ((WTYPE *)((BYTE *)(ptr) + (offset)))
-/* Move the address ptr by offset words */
-#define MOVE_WORD(ptr, offset) ((WTYPE *)(ptr) + (offset))
-/* Read a word from address ptr */
-#define READ_WORD(ptr) (*(WTYPE *)(ptr))
-/* Write a word value to address ptr */
-#define WRITE_WORD(ptr, value) (*(WTYPE *)(ptr) = (value))
-/* Pack the size, prev-allocated and allocation bits into a word */
-#define PACKT(size, prev, alloc) ((size) | (prev << 1) | (alloc))
-/* Read the size from header/footer word at address Hptr */
-#define READ_SIZE(Hptr) (READ_WORD(Hptr) & ~(WTYPE)0x7) // ~0x7  == 111111...1000 ==> 하위 3비트 제외한 나머지만 남김 (즉, 블록 크기만 남김)
-/* Read the allocation-bit from header/footer word at address Hptr */
-#define READ_ALLOC(Hptr) (READ_WORD(Hptr) & (WTYPE)0x1) // 0x1  == 000000...0001 ==> 최하위 비트만 남김 (즉, 할당 여부만 남김)
-/* Read the prev-allocated-bit from header/footer word at address Hptr */
-#define READ_PREV_ALLOC(Hptr) ((READ_WORD(Hptr) & (WTYPE)0x2) >> 1)
-/* Write the size, prev-allocated and allocation bits to the word at address Hptr */
-#define WRITE(Hptr, size, prev, alloc) (WRITE_WORD((Hptr), PACKT((size), (prev), (alloc))))
-/* Write the size to the word at address Hptr */
-#define WRITE_SIZE(Hptr, size) (WRITE((Hptr), (size), READ_PREV_ALLOC(Hptr), READ_ALLOC(Hptr)))
-/* Write allocation-bit to the word at address Hptr */
-#define WRITE_ALLOC(Hptr, alloc)  (WRITE((Hptr), READ_SIZE(Hptr), READ_PREV_ALLOC(Hptr), alloc))
-/* Write prev-allocated-bit to the word at address Hptr */
-#define WRITE_PREV_ALLOC(Hptr, prev) (WRITE((Hptr), READ_SIZE(Hptr), prev, READ_ALLOC(Hptr)))
-/* Get the header-word pointer from the payload pointer pp */
-#define HEADER(pp) (MOVE_WORD(pp, -1))
-/* Get the footer-word pointer from the payload pointer pp */
-#define FOOTER(pp) (MOVE_BYTE(pp, (BLOCK_SIZE(pp) - DSIZE)))
-/* Read the block size at the payload pp */
-#define BLOCK_SIZE(pp) (READ_SIZE(HEADER(pp)))
-/* Gets the block allocation status (alloc-bit) */
-#define GET_ALLOCT(pp) (READ_ALLOC(HEADER(pp)))
-/* Gets the previous block allocation status (prev-alloc-bit) */
-#define GET_PREV_ALLOC(pp) (READ_PREV_ALLOC(HEADER(pp)))
-/* Check if the block of the payload pp is free */
-#define IS_FREE(pp) (!(GET_ALLOC(pp)))
-/* Check if the *previous* block of the payload pp is free */
-#define IS_PREV_FREE(pp) (!(GET_PREV_ALLOC(pp)))
-/* Get next block payload pointer from pp (current payload pointer) */
-#define NEXT_BLOCK(pp) (MOVE_BYTE(pp, BLOCK_SIZE(pp)))
-/* Get previous block payload pointer from pp (current payload pointer) */
-#define PREV_BLOCK(pp) (MOVE_BYTE(pp, - READ_SIZE(MOVE_WORD(pp, -2))))
+// /* Move the address ptr by offset bytes */
+// #define MOVE_BYTE(ptr, offset) ((WTYPE *)((BYTE *)(ptr) + (offset)))
+// /* Move the address ptr by offset words */
+// #define MOVE_WORD(ptr, offset) ((WTYPE *)(ptr) + (offset))
+// /* Read a word from address ptr */
+// #define READ_WORD(ptr) (*(WTYPE *)(ptr))
+// /* Write a word value to address ptr */
+// #define WRITE_WORD(ptr, value) (*(WTYPE *)(ptr) = (value))
+// /* Pack the size, prev-allocated and allocation bits into a word */
+// #define PACKT(size, prev, alloc) ((size) | (prev << 1) | (alloc))
+// /* Read the size from header/footer word at address Hptr */
+// #define READ_SIZE(Hptr) (READ_WORD(Hptr) & ~(WTYPE)0x7) // ~0x7  == 111111...1000 ==> 하위 3비트 제외한 나머지만 남김 (즉, 블록 크기만 남김)
+// /* Read the allocation-bit from header/footer word at address Hptr */
+// #define READ_ALLOC(Hptr) (READ_WORD(Hptr) & (WTYPE)0x1) // 0x1  == 000000...0001 ==> 최하위 비트만 남김 (즉, 할당 여부만 남김)
+// /* Read the prev-allocated-bit from header/footer word at address Hptr */
+// #define READ_PREV_ALLOC(Hptr) ((READ_WORD(Hptr) & (WTYPE)0x2) >> 1)
+// /* Write the size, prev-allocated and allocation bits to the word at address Hptr */
+// #define WRITE(Hptr, size, prev, alloc) (WRITE_WORD((Hptr), PACKT((size), (prev), (alloc))))
+// /* Write the size to the word at address Hptr */
+// #define WRITE_SIZE(Hptr, size) (WRITE((Hptr), (size), READ_PREV_ALLOC(Hptr), READ_ALLOC(Hptr)))
+// /* Write allocation-bit to the word at address Hptr */
+// #define WRITE_ALLOC(Hptr, alloc)  (WRITE((Hptr), READ_SIZE(Hptr), READ_PREV_ALLOC(Hptr), alloc))
+// /* Write prev-allocated-bit to the word at address Hptr */
+// #define WRITE_PREV_ALLOC(Hptr, prev) (WRITE((Hptr), READ_SIZE(Hptr), prev, READ_ALLOC(Hptr)))
+// /* Get the header-word pointer from the payload pointer pp */
+// #define HEADER(pp) (MOVE_WORD(pp, -1))
+// /* Get the footer-word pointer from the payload pointer pp */
+// #define FOOTER(pp) (MOVE_BYTE(pp, (BLOCK_SIZE(pp) - DSIZE)))
+// /* Read the block size at the payload pp */
+// #define BLOCK_SIZE(pp) (READ_SIZE(HEADER(pp)))
+// /* Gets the block allocation status (alloc-bit) */
+// #define GET_ALLOCT(pp) (READ_ALLOC(HEADER(pp)))
+// /* Gets the previous block allocation status (prev-alloc-bit) */
+// #define GET_PREV_ALLOC(pp) (READ_PREV_ALLOC(HEADER(pp)))
+// /* Check if the block of the payload pp is free */
+// #define IS_FREE(pp) (!(GET_ALLOC(pp)))
+// /* Check if the *previous* block of the payload pp is free */
+// #define IS_PREV_FREE(pp) (!(GET_PREV_ALLOC(pp)))
+// /* Get next block payload pointer from pp (current payload pointer) */
+// #define NEXT_BLOCK(pp) (MOVE_BYTE(pp, BLOCK_SIZE(pp)))
+// /* Get previous block payload pointer from pp (current payload pointer) */
+// #define PREV_BLOCK(pp) (MOVE_BYTE(pp, - READ_SIZE(MOVE_WORD(pp, -2))))
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
@@ -143,10 +143,6 @@ static void *rover = NULL;  // Next-fit용 탐색 포인터
 /** 
  * adjust_block: 크기를 MIN_BLOCK_SIZE 단위로 맞추되, 헤더 & 푸터(16 바이트) 포함치
  */
-static inline size_t adjust_block_v0_3(size_t size) { // implicit free list 원본
-    if (size <= DSIZE) return MIN_BLOCK_SIZE;
-    return DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
-}
 
 static inline size_t adjust_block(size_t size) {
     size_t asize = DSIZE * ((size + DSIZE + (DSIZE-1)) / DSIZE);
@@ -389,7 +385,7 @@ void *mm_realloc(void *ptr, size_t size) {
     }
 
     size_t oldsize = GET_SIZE(HDRP(ptr));  // 기존 블록의 크기 가져오기
-    size_t asize = (size <= DSIZE) ? (2 * DSIZE) : DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
+    size_t asize = adjust_block(size);
 
     if (asize <= oldsize)
         return ptr;  // 기존 크기가 충분하면 기존 포인터 그대로 반환
@@ -413,70 +409,6 @@ void *mm_realloc(void *ptr, size_t size) {
     memcpy(newptr, ptr, copySize);  // 데이터 복사
     mm_free(ptr);  // 기존 블록은 free
     return newptr;  // 새로운 포인터 반환
-}
-
-void *mm_realloc_v1(void *ptr, size_t size) {
-    CHKHEAP(__LINE__);
-
-    if (ptr == NULL) {
-        return mm_malloc(size);
-    }
-
-    if (size == 0) {
-        mm_free(ptr);
-        return NULL;
-    }
-
-    size_t asize = adjust_block(size);
-    size_t old_size = GET_SIZE(HDRP(ptr));
-
-    if (asize <= old_size) {
-        size_t leftover = old_size - asize;
-        if (leftover >= MIN_BLOCK_SIZE) {
-            SET_HEADER(ptr, asize, 1);
-            SET_FOOTER(ptr, asize, 1);
-            void *new_free = NEXT_BLKP(ptr);
-            SET_HEADER(new_free, leftover, 0);
-            SET_FOOTER(new_free, leftover, 0);
-            insert_node(new_free);  // 남은 부분을 free list에 추가
-        }
-        return ptr;
-    }
-
-    CHKHEAP(__LINE__);
-
-    void *next_blk = NEXT_BLKP(ptr);
-    size_t next_alloc = GET_ALLOC(HDRP(next_blk));
-    size_t next_size = GET_SIZE(HDRP(next_blk));
-
-    if (!next_alloc && (old_size + next_size >= asize)) {
-        remove_node(next_blk);  // 병합 전 인접 free 블록을 리스트에서 제거
-        size_t new_size = old_size + next_size;
-        SET_HEADER(ptr, new_size, 1);
-        SET_FOOTER(ptr, new_size, 1);
-
-        size_t leftover = new_size - asize;
-        if (leftover >= MIN_BLOCK_SIZE) {
-            SET_HEADER(ptr, asize, 1);
-            SET_FOOTER(ptr, asize, 1);
-            void *new_free = NEXT_BLKP(ptr);
-            SET_HEADER(new_free, leftover, 0);
-            SET_FOOTER(new_free, leftover, 0);
-            insert_node(new_free);  // 남은 부분을 free list에 추가
-        }
-        return ptr;
-    }
-
-    void *new_ptr = mm_malloc(size);
-    if (new_ptr == NULL)
-        return NULL;
-
-    size_t copy_size = old_size - DSIZE < size ? old_size - DSIZE : size;
-    memcpy(new_ptr, ptr, copy_size);
-    mm_free(ptr);
-
-    CHKHEAP(__LINE__);
-    return new_ptr;
 }
 
 
