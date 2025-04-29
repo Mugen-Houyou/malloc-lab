@@ -1,5 +1,5 @@
 /**
- * mm.c v0.3: Explicit allocator & explicit free list & first-fit 탐색 기반 & mm_realloc 개선판.
+ * mm.c v0.3: Explicit allocator & __ free list & first-fit 탐색 기반 & mm_realloc 개선판.
  * - header/footer로 크기, 할당 비트 관리
  * - free는 coalescing으로 인접 빈 블록을 병합
  * - realloc은 in-place shrink/expand 적용
@@ -44,48 +44,48 @@ team_t team = {
 
 
 /* 유틸 매크로 */
-/* Move the address ptr by offset bytes */
-#define MOVE_BYTE(ptr, offset) ((WTYPE *)((BYTE *)(ptr) + (offset)))
-/* Move the address ptr by offset words */
-#define MOVE_WORD(ptr, offset) ((WTYPE *)(ptr) + (offset))
-/* Read a word from address ptr */
-#define READ_WORD(ptr) (*(WTYPE *)(ptr))
-/* Write a word value to address ptr */
-#define WRITE_WORD(ptr, value) (*(WTYPE *)(ptr) = (value))
-/* Pack the size, prev-allocated and allocation bits into a word */
-#define PACKT(size, prev, alloc) ((size) | (prev << 1) | (alloc))
-/* Read the size from header/footer word at address Hptr */
-#define READ_SIZE(Hptr) (READ_WORD(Hptr) & ~0x7) // ~0x7  == 111111...1000 ==> 하위 3비트 제외한 나머지만 남김 (즉, 블록 크기만 남김)
-/* Read the allocation-bit from header/footer word at address Hptr */
-#define READ_ALLOC(Hptr) (READ_WORD(Hptr) & 0x1) // 0x1  == 000000...0001 ==> 최하위 비트만 남김 (즉, 할당 여부만 남김)
-/* Read the prev-allocated-bit from header/footer word at address Hptr */
-#define READ_PREV_ALLOC(Hptr) ((READ_WORD(Hptr) & 0x2) >> 1)
-/* Write the size, prev-allocated and allocation bits to the word at address Hptr */
-#define WRITE(Hptr, size, prev, alloc) (WRITE_WORD((Hptr), PACKT((size), (prev), (alloc))))
-/* Write the size to the word at address Hptr */
-#define WRITE_SIZE(Hptr, size) (WRITE((Hptr), (size), READ_PREV_ALLOC(Hptr), READ_ALLOC(Hptr)))
-/* Write allocation-bit to the word at address Hptr */
-#define WRITE_ALLOC(Hptr, alloc)  (WRITE((Hptr), READ_SIZE(Hptr), READ_PREV_ALLOC(Hptr), alloc))
-/* Write prev-allocated-bit to the word at address Hptr */
-#define WRITE_PREV_ALLOC(Hptr, prev) (WRITE((Hptr), READ_SIZE(Hptr), prev, READ_ALLOC(Hptr)))
-/* Get the header-word pointer from the payload pointer pp */
-#define HEADER(pp) (MOVE_WORD(pp, -1))
-/* Read the block size at the payload pp */
-#define BLOCK_SIZE(pp) (READ_SIZE(HEADER(pp)))
-/* Get the footer-word pointer from the payload pointer pp */
-#define FOOTER(pp) (MOVE_BYTE(pp, (BLOCK_SIZE(pp) - DSIZE)))
-/* Gets the block allocation status (alloc-bit) */
-#define GET_ALLOCT(pp) (READ_ALLOC(HEADER(pp)))
-/* Gets the previous block allocation status (prev-alloc-bit) */
-#define GET_PREV_ALLOC(pp) (READ_PREV_ALLOC(HEADER(pp)))
-/* Check if the block of the payload pp is free */
-#define IS_FREE(pp) (!(GET_ALLOC(pp)))
-/* Check if the *previous* block of the payload pp is free */
-#define IS_PREV_FREE(pp) (!(GET_PREV_ALLOC(pp)))
-/* Get next block payload pointer from pp (current payload pointer) */
-#define NEXT_BLOCK(pp) (MOVE_BYTE(pp, BLOCK_SIZE(pp)))
-/* Get previous block payload pointer from pp (current payload pointer) */
-#define PREV_BLOCK(pp) (MOVE_BYTE(pp, - READ_SIZE(MOVE_WORD(pp, -2))))
+// /* Move the address ptr by offset bytes */
+// #define MOVE_BYTE(ptr, offset) ((WTYPE *)((BYTE *)(ptr) + (offset)))
+// /* Move the address ptr by offset words */
+// #define MOVE_WORD(ptr, offset) ((WTYPE *)(ptr) + (offset))
+// /* Read a word from address ptr */
+// #define READ_WORD(ptr) (*(WTYPE *)(ptr))
+// /* Write a word value to address ptr */
+// #define WRITE_WORD(ptr, value) (*(WTYPE *)(ptr) = (value))
+// /* Pack the size, prev-allocated and allocation bits into a word */
+// #define PACKT(size, prev, alloc) ((size) | (prev << 1) | (alloc))
+// /* Read the size from header/footer word at address Hptr */
+// #define READ_SIZE(Hptr) (READ_WORD(Hptr) & ~0x7) // ~0x7  == 111111...1000 ==> 하위 3비트 제외한 나머지만 남김 (즉, 블록 크기만 남김)
+// /* Read the allocation-bit from header/footer word at address Hptr */
+// #define READ_ALLOC(Hptr) (READ_WORD(Hptr) & 0x1) // 0x1  == 000000...0001 ==> 최하위 비트만 남김 (즉, 할당 여부만 남김)
+// /* Read the prev-allocated-bit from header/footer word at address Hptr */
+// #define READ_PREV_ALLOC(Hptr) ((READ_WORD(Hptr) & 0x2) >> 1)
+// /* Write the size, prev-allocated and allocation bits to the word at address Hptr */
+// #define WRITE(Hptr, size, prev, alloc) (WRITE_WORD((Hptr), PACKT((size), (prev), (alloc))))
+// /* Write the size to the word at address Hptr */
+// #define WRITE_SIZE(Hptr, size) (WRITE((Hptr), (size), READ_PREV_ALLOC(Hptr), READ_ALLOC(Hptr)))
+// /* Write allocation-bit to the word at address Hptr */
+// #define WRITE_ALLOC(Hptr, alloc)  (WRITE((Hptr), READ_SIZE(Hptr), READ_PREV_ALLOC(Hptr), alloc))
+// /* Write prev-allocated-bit to the word at address Hptr */
+// #define WRITE_PREV_ALLOC(Hptr, prev) (WRITE((Hptr), READ_SIZE(Hptr), prev, READ_ALLOC(Hptr)))
+// /* Get the header-word pointer from the payload pointer pp */
+// #define HEADER(pp) (MOVE_WORD(pp, -1))
+// /* Read the block size at the payload pp */
+// #define BLOCK_SIZE(pp) (READ_SIZE(HEADER(pp)))
+// /* Get the footer-word pointer from the payload pointer pp */
+// #define FOOTER(pp) (MOVE_BYTE(pp, (BLOCK_SIZE(pp) - DSIZE)))
+// /* Gets the block allocation status (alloc-bit) */
+// #define GET_ALLOCT(pp) (READ_ALLOC(HEADER(pp)))
+// /* Gets the previous block allocation status (prev-alloc-bit) */
+// #define GET_PREV_ALLOC(pp) (READ_PREV_ALLOC(HEADER(pp)))
+// /* Check if the block of the payload pp is free */
+// #define IS_FREE(pp) (!(GET_ALLOC(pp)))
+// /* Check if the *previous* block of the payload pp is free */
+// #define IS_PREV_FREE(pp) (!(GET_PREV_ALLOC(pp)))
+// /* Get next block payload pointer from pp (current payload pointer) */
+// #define NEXT_BLOCK(pp) (MOVE_BYTE(pp, BLOCK_SIZE(pp)))
+// /* Get previous block payload pointer from pp (current payload pointer) */
+// #define PREV_BLOCK(pp) (MOVE_BYTE(pp, - READ_SIZE(MOVE_WORD(pp, -2))))
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
@@ -112,6 +112,9 @@ team_t team = {
 #define SET_PRED(bp, p) (*(PRED_PTR(bp)) = (p))  // 이전 블록 위치를 설정
 #define SET_SUCC(bp, q) (*(SUCC_PTR(bp)) = (q))  // 다음 블록 위치를 설정
 
+// Segregated free list 구현을 위함.
+#define CLASS_CNT 10          // Segregated free list 구현용. 블록 크기 클래스 수.
+
 
 /* DEBUG 플래그 옵션 - `Makefile`의 `-DDEBUG` */
 #ifdef DEBUG
@@ -125,6 +128,7 @@ team_t team = {
 /* 전역 변수 */
 static char *heap_listp = NULL; // 맨 처음 블록 포인터
 static void *free_list_head = NULL; // Explicit free list의 출발점
+static void *seg_head[CLASS_CNT];  // Segregated free list에서, 각 클래스의 free-list 헤드
 
 
 /** 참고: 함수에 `static`는 왜 붙이는가? 
@@ -136,6 +140,23 @@ static void *free_list_head = NULL; // Explicit free list의 출발점
  *        - 컴파일러에 “이 함수를 호출하는 곳에 본문을 직접 삽입(inline expansion)해도 좋다”고 알림.
  *        - 걍 '좋다'는 거지, 반드시 인라인 삽입을 보장하진 않음.
 */
+
+/**
+ * class_index: 크기를 받아서 어느 클래스인지 돌려줌.
+ * Segregated free list용.
+ */
+static inline int class_index(size_t size){
+    if (size <= 16) return 0;
+    if (size <= 32) return 1;
+    if (size <= 64) return 2;
+    if (size <= 128) return 3;
+    if (size <= 256) return 4;
+    if (size <= 512) return 5;
+    if (size <= 1024) return 6;
+    if (size <= 2048) return 7;
+    if (size <= 4096) return 8;
+    return 9; // 4096 초과 
+}
 
 /** 
  * adjust_block: 크기를 MIN_BLOCK_SIZE 단위로 맞추되, 헤더 & 푸터(16 바이트) 포함치
@@ -308,10 +329,6 @@ int mm_init(void){
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
         return -1;
 
-    // 설명 필요.
-    if (extend_heap(2)==NULL)
-        return -1;
-
     return 0;
 }
 
@@ -328,7 +345,7 @@ void *mm_realloc(void *ptr, size_t size) {
     }
 
     size_t oldsize = GET_SIZE(HDRP(ptr));  // 기존 블록의 크기 가져오기
-    size_t asize = (size <= DSIZE) ? (2 * DSIZE) : DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
+    size_t asize = adjust_block(size);
 
     if (asize <= oldsize)
         return ptr;  // 기존 크기가 충분하면 기존 포인터 그대로 반환
@@ -347,8 +364,10 @@ void *mm_realloc(void *ptr, size_t size) {
         return NULL;  // 할당 실패하면 NULL 반환
 
     size_t copySize = oldsize - DSIZE;  // 기존 데이터 크기
+
     if (size < copySize)
         copySize = size;  // 복사할 크기를 요청된 크기로 맞춤
+
     memcpy(newptr, ptr, copySize);  // 데이터 복사
     mm_free(ptr);  // 기존 블록은 free
     return newptr;  // 새로운 포인터 반환
@@ -370,8 +389,6 @@ void *mm_malloc(size_t size){
     /* 2. free list에서 first-fit 탐색 */
     void *bp = find_fit(asize);
     if (bp != NULL) {
-        // 설명 필요
-        // bp = coalesce(bp);
 
         place(bp, asize); // place 안에서 remove_node → split/insert_node
         return bp;
@@ -459,53 +476,54 @@ static void mm_checkheap(int line) {
         fprintf(stderr, "❌ Bad epilogue header at %p\n", bp);
         errors++;
     }
-
-    /* 3. Free list 일관성 검사 */
-    {
+        
+    /* 3. Free list 일관성 검사 (단일 → 분리 리스트 버전) */
+    for (int i = 0; i < LISTS; i++) {
         void *f;
         int count = 0;
-        for (f = free_list_head; f != NULL; f = GET_SUCC(f)) {
+        for (f = seg_free_head[i]; f != NULL; f = GET_SUCC(f)) {
             /* 3-A. alloc 비트 확인 */
             if (GET_ALLOC(HDRP(f))) {
-                fprintf(stderr, "❌ Free-list block %p marked allocated\n", f);
+                fprintf(stderr, "❌ [list %d] block %p marked allocated\n", i, f);
                 errors++;
             }
-            /* 3-B. 경계 검사 */
-            if ((char *)HDRP(f) < (char *)mem_heap_lo() ||
-                (char *)FTRP(f) > (char *)mem_heap_hi()) {
-                fprintf(stderr, "❌ Free-list block %p out of heap bounds\n", f);
+            /* 3-B. 클래스 인덱스 일치 확인 */
+            int idx = class_index(GET_SIZE(HDRP(f)));
+            if (idx != i) {
+                fprintf(stderr, "❌ block %p in list %d should be in list %d\n",
+                        f, i, idx);
                 errors++;
             }
-            /* 3-C. 포인터 일관성 확인 */
+            /* 3-C. pred/succ 일관성 */
             void *p = GET_PRED(f), *s = GET_SUCC(f);
             if (p && GET_SUCC(p) != f) {
-                fprintf(stderr, "❌ Succ/Pred mismatch: pred(%p)->succ != %p\n", p, f);
+                fprintf(stderr, "❌ [list %d] pred(%p)->succ != %p\n", i, p, f);
                 errors++;
             }
             if (s && GET_PRED(s) != f) {
-                fprintf(stderr, "❌ Pred/Succ mismatch: succ(%p)->pred != %p\n", s, f);
+                fprintf(stderr, "❌ [list %d] succ(%p)->pred != %p\n", i, s, f);
                 errors++;
             }
             /* 3-D. 무한 루프 방지 */
             if (++count > MAX_HEAP_BLOCKS) {
-                fprintf(stderr, "❌ Free-list cycle detected\n");
+                fprintf(stderr, "❌ [list %d] cycle detected\n", i);
                 errors++;
                 break;
             }
         }
     }
-
-    /* 4. 힙상의 모든 free 블록이 리스트에 있어야 함 */
+        
+    /* 4. 힙상의 모든 free 블록이 정확히 한 분리 리스트에 있어야 함 */
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
         if (!GET_ALLOC(HDRP(bp))) {
-            /* free_list_head 탐색 */
-            void *f;
             int found = 0;
-            for (f = free_list_head; f != NULL; f = GET_SUCC(f)) {
-                if (f == bp) { found = 1; break; }
+            for (int i = 0; i < LISTS && !found; i++) {
+                for (void *f = seg_free_head[i]; f != NULL; f = GET_SUCC(f)) {
+                    if (f == bp) { found = 1; break; }
+                }
             }
             if (!found) {
-                fprintf(stderr, "❌ Free block %p not in free list\n", bp);
+                fprintf(stderr, "❌ Free block %p not in any free list\n", bp);
                 errors++;
             }
         }
