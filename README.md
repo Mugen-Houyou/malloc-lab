@@ -24,6 +24,12 @@ short{1,2}-bal.rep
 Makefile	
 	Builds the driver
 
+mdriver
+	A precompiled 32-bit version of the mdriver binary (for IA-32 systems; AKA x86).
+
+mdriver-AMD64
+	A precompiled 64-bit version of the mdriver binary (for AMD64 systems; AKA x86-64).
+
 **********************************
 Other support files for the driver
 **********************************
