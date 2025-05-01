@@ -1,5 +1,5 @@
 /**
- * mm.c v0.3: Explicit allocator & implicit free list & next-fit 탐색 기반 & mm_realloc 개선판.
+ * mm.c v0.3: Explicit allocator & explicit free list & next-fit 탐색 기반 & mm_realloc 개선판.
  * - header/footer로 크기, 할당 비트 관리
  * - free는 coalescing으로 인접 빈 블록을 병합
  * - realloc은 in-place shrink/expand 적용
